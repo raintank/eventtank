@@ -7,8 +7,8 @@ import (
 
 	"github.com/bmizerany/assert"
 	"github.com/codeskyblue/go-uuid"
+	"github.com/raintank/eventtank/eventdef"
 	"github.com/raintank/met/helper"
-	"github.com/raintank/raintank-metric/eventdef"
 	"github.com/raintank/schema"
 )
 
