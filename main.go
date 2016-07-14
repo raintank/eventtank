@@ -20,8 +20,8 @@ import (
 	"github.com/raintank/met/helper"
 	"github.com/raintank/misc/app"
 	"github.com/raintank/misc/instrumented_nsq"
-	"github.com/raintank/schema/msg"
 	"github.com/raintank/worldping-api/pkg/log"
+	"gopkg.in/raintank/schema.v0/msg"
 
 	"github.com/codeskyblue/go-uuid"
 	"github.com/raintank/eventtank/eventdef"

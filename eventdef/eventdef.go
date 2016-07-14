@@ -25,8 +25,8 @@ import (
 
 	"github.com/codeskyblue/go-uuid"
 	elastigo "github.com/mattbaird/elastigo/lib"
-	"github.com/raintank/schema"
 	"github.com/raintank/worldping-api/pkg/log"
+	"gopkg.in/raintank/schema.v0"
 )
 
 var (

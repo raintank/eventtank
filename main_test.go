@@ -9,7 +9,7 @@ import (
 	"github.com/codeskyblue/go-uuid"
 	"github.com/raintank/eventtank/eventdef"
 	"github.com/raintank/met/helper"
-	"github.com/raintank/schema"
+	"gopkg.in/raintank/schema.v0"
 )
 
 func makeEvent(timestamp time.Time) *schema.ProbeEvent {
