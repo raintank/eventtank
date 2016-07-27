@@ -5,11 +5,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Shopify/sarama"
 	"github.com/bmizerany/assert"
 	"github.com/codeskyblue/go-uuid"
 	"github.com/raintank/eventtank/eventdef"
 	"github.com/raintank/met/helper"
-	"gopkg.in/raintank/schema.v0"
+	"gopkg.in/raintank/schema.v1"
 )
 
 func makeEvent(timestamp time.Time) *schema.ProbeEvent {
@@ -31,8 +32,17 @@ func TestAddInProgressMessage(t *testing.T) {
 	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
+	go writeQueue.Loop()
 
-	writeQueue.EnQueue(e.Id, nil)
+	writeQueue.EnQueue(&inProgressMessage{
+		Timestamp: time.Now(),
+		Event:     e,
+		Message: &sarama.ConsumerMessage{
+			Topic:     "test",
+			Partition: 1,
+			Offset:    10,
+		},
+	})
 
 	assert.T(t, len(writeQueue.inProgress) == 1, fmt.Sprintf("expected 1 item in inProgress queue. found %d", len(writeQueue.inProgress)))
 }
@@ -43,18 +53,27 @@ func TestAddInProgressMessageThenProcess(t *testing.T) {
 	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
+	go writeQueue.Loop()
 
-	writeQueue.EnQueue(e.Id, nil)
+	writeQueue.EnQueue(&inProgressMessage{
+		Timestamp: time.Now(),
+		Event:     e,
+		Message: &sarama.ConsumerMessage{
+			Topic:     "test",
+			Partition: 1,
+			Offset:    10,
+		},
+	})
 
 	writeQueue.Lock()
 	assert.T(t, len(writeQueue.inProgress) == 1, fmt.Sprintf("expected 1 item in inProgress queue. found %d", len(writeQueue.inProgress)))
 	writeQueue.Unlock()
 
 	//push a saveStatus to the status Channel
-	writeQueue.status <- &eventdef.BulkSaveStatus{
+	writeQueue.status <- []*eventdef.BulkSaveStatus{{
 		Id: e.Id,
 		Ok: true,
-	}
+	}}
 
 	time.Sleep(time.Millisecond)
 	writeQueue.Lock()
@@ -68,22 +87,31 @@ func TestAddInProgressMessageThenProcessFailed(t *testing.T) {
 	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
+	go writeQueue.Loop()
 
-	writeQueue.EnQueue(e.Id, nil)
+	writeQueue.EnQueue(&inProgressMessage{
+		Timestamp: time.Now(),
+		Event:     e,
+		Message: &sarama.ConsumerMessage{
+			Topic:     "test",
+			Partition: 1,
+			Offset:    10,
+		},
+	})
 
 	writeQueue.Lock()
 	assert.T(t, len(writeQueue.inProgress) == 1, fmt.Sprintf("expected 1 item in inProgress queue. found %d", len(writeQueue.inProgress)))
 	writeQueue.Unlock()
 
 	//push a saveStatus to the status Channel
-	writeQueue.status <- &eventdef.BulkSaveStatus{
+	writeQueue.status <- []*eventdef.BulkSaveStatus{{
 		Id: e.Id,
 		Ok: false,
-	}
+	}}
 
 	time.Sleep(time.Millisecond)
 	writeQueue.Lock()
-	assert.T(t, len(writeQueue.inProgress) == 0, fmt.Sprintf("expected 0 items in inProgress queue. found %d", len(writeQueue.inProgress)))
+	assert.T(t, len(writeQueue.inProgress) == 1, fmt.Sprintf("expected 1 items in inProgress queue. found %d", len(writeQueue.inProgress)))
 	writeQueue.Unlock()
 }
 
@@ -93,25 +121,36 @@ func TestAddMultipleInProgressMessageThenProcess(t *testing.T) {
 	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
+	go writeQueue.Loop()
+
 	events := make([]*schema.ProbeEvent, 100)
 	for i := 0; i < 100; i++ {
 		e := makeEvent(time.Now())
 		events[i] = e
-		go writeQueue.EnQueue(e.Id, nil)
+		go writeQueue.EnQueue(&inProgressMessage{
+			Timestamp: time.Now(),
+			Event:     e,
+			Message: &sarama.ConsumerMessage{
+				Topic:     "test",
+				Partition: 1,
+				Offset:    int64(i),
+			},
+		})
 	}
 	time.Sleep(time.Millisecond)
 
 	writeQueue.Lock()
 	assert.T(t, len(writeQueue.inProgress) == 100, fmt.Sprintf("expected 100 item in inProgress queue. found %d", len(writeQueue.inProgress)))
 	writeQueue.Unlock()
-
+	statuses := make([]*eventdef.BulkSaveStatus, 0)
 	for _, e := range events {
 		//push a saveStatus to the status Channel
-		writeQueue.status <- &eventdef.BulkSaveStatus{
+		statuses = append(statuses, &eventdef.BulkSaveStatus{
 			Id: e.Id,
 			Ok: true,
-		}
+		})
 	}
+	writeQueue.status <- statuses
 
 	time.Sleep(time.Second)
 	writeQueue.Lock()
