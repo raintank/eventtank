@@ -23,16 +23,15 @@ import (
 	"net"
 	"time"
 
-	"github.com/codeskyblue/go-uuid"
 	elastigo "github.com/mattbaird/elastigo/lib"
 	"github.com/raintank/worldping-api/pkg/log"
-	"gopkg.in/raintank/schema.v0"
+	"gopkg.in/raintank/schema.v1"
 )
 
 var (
 	es          *elastigo.Conn
 	bulk        *elastigo.BulkIndexer
-	writeStatus chan *BulkSaveStatus
+	writeStatus chan []*BulkSaveStatus
 )
 
 const maxCons = 10
@@ -44,7 +43,7 @@ type BulkSaveStatus struct {
 	Ok bool
 }
 
-func InitElasticsearch(addr, user, pass string, w chan *BulkSaveStatus, bulkMaxDocs int) error {
+func InitElasticsearch(addr, user, pass string, w chan []*BulkSaveStatus, bulkMaxDocs int) error {
 	writeStatus = w
 	es = elastigo.NewConn()
 	host, port, err := net.SplitHostPort(addr)
@@ -128,20 +127,6 @@ func initBulkIndexer(bulkSend func(*bytes.Buffer) error, bulkMaxDocs int) {
 }
 
 func Save(e *schema.ProbeEvent) error {
-	if e.Id == "" {
-		// per http://blog.mikemccandless.com/2014/05/choosing-fast-unique-identifier-uuid.html,
-		// using V1 UUIDs is much faster than v4 like we were using
-		u := uuid.NewUUID()
-		e.Id = u.String()
-	}
-	if e.Timestamp == 0 {
-		// looks like this expects timestamps in milliseconds
-		e.Timestamp = time.Now().UnixNano() / int64(time.Millisecond)
-	}
-	if err := e.Validate(); err != nil {
-		return err
-	}
-
 	// Craft the elasticsearch index name from the event's timestamp
 	t := time.Unix(e.Timestamp/1000, 0)
 	y, m, d := t.Date()
@@ -186,6 +171,7 @@ func processEsResponse(body []byte) error {
 			log.Error(3, "Bulk Insertion Error. Failed item count [%d]", len(response.Items))
 		}
 		if len(response.Items) > 0 {
+			statuses := make([]*BulkSaveStatus, 0)
 			for _, m := range response.Items {
 				for _, v := range m {
 					stat := &BulkSaveStatus{
@@ -198,9 +184,10 @@ func processEsResponse(body []byte) error {
 					} else {
 						log.Debug("completed %s successfully.", stat.Id)
 					}
-					writeStatus <- stat
+					statuses = append(statuses, stat)
 				}
 			}
+			writeStatus <- statuses
 		}
 	} else {
 		// Something went *extremely* wrong trying to submit these items

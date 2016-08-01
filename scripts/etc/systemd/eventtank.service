@@ -1,0 +1,19 @@
+[Unit]
+Description=Starts and stops a single eventtank instance on this system
+Documentation=https://github.com/raintank/eventtank
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=root
+Group=root
+Type=simple
+Restart=on-failure
+WorkingDirectory=/
+ExecStart=/usr/bin/eventtank -config=/etc/raintank/eventtank.ini
+LimitNOFILE=102400
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
+
