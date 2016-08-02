@@ -18,7 +18,7 @@ mkdir -p ${BUILD}/etc/init
 mkdir -p ${BUILD}/etc/raintank
 
 cp ${BASE}/etc/eventtank.ini ${BUILD}/etc/raintank/
-cp ${BUILD}/eventtank ${BUILD}/usr/bin/
+cp ${BUILD_ROOT}/eventtank ${BUILD}/usr/bin/
 
 PACKAGE_NAME="${BUILD}/eventtank-${VERSION}_${ARCH}.deb"
 fpm -s dir -t deb \
@@ -35,7 +35,7 @@ mkdir -p ${BUILD}/lib/systemd/system/
 mkdir -p ${BUILD}/etc/raintank
 
 cp ${BASE}/etc/eventtank.ini ${BUILD}/etc/raintank/
-cp ${BUILD}/eventtank ${BUILD}/usr/bin/
+cp ${BUILD_ROOT}/eventtank ${BUILD}/usr/bin/
 cp ${BASE}/etc/systemd/eventtank.service ${BUILD}/lib/systemd/system/
 
 PACKAGE_NAME="${BUILD}/eventtank-${VERSION}_${ARCH}.deb"
