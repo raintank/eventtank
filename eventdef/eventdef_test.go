@@ -27,7 +27,7 @@ import (
 
 	"github.com/bmizerany/assert"
 	"github.com/codeskyblue/go-uuid"
-	"gopkg.in/raintank/schema.v0"
+	"gopkg.in/raintank/schema.v1"
 )
 
 func makeEvent(timestamp time.Time) *schema.ProbeEvent {
@@ -134,7 +134,7 @@ func TestPayloadSentMultipleEvents(t *testing.T) {
 }
 
 func TestResponseChannelOk(t *testing.T) {
-	writeStatus = make(chan *BulkSaveStatus, 1)
+	writeStatus = make(chan []*BulkSaveStatus, 1)
 
 	esResponse := []byte(`{
     "took": 1,
@@ -154,12 +154,13 @@ func TestResponseChannelOk(t *testing.T) {
 	processEsResponse(esResponse)
 
 	status := <-writeStatus
-	assert.T(t, status.Id == "1", fmt.Sprintf("expected status for event %s, got %s.", "1", status.Id))
-	assert.T(t, status.Ok, fmt.Sprintf("expected status.Ok to be true."))
+	assert.T(t, len(status) == 1, fmt.Sprintf("expected 1 status for event got %s.", len(status)))
+	assert.T(t, status[0].Id == "1", fmt.Sprintf("expected status for event %s, got %s.", "1", status[0].Id))
+	assert.T(t, status[0].Ok, fmt.Sprintf("expected status.Ok to be true."))
 }
 
 func TestResponseChannelFailed(t *testing.T) {
-	writeStatus = make(chan *BulkSaveStatus, 1)
+	writeStatus = make(chan []*BulkSaveStatus, 1)
 
 	esResponse := []byte(`{
     "took": 1,
@@ -179,12 +180,13 @@ func TestResponseChannelFailed(t *testing.T) {
 	processEsResponse(esResponse)
 
 	status := <-writeStatus
-	assert.T(t, status.Id == "1", fmt.Sprintf("expected status for event %s, got %s.", "1", status.Id))
-	assert.T(t, !status.Ok, fmt.Sprintf("expected status.Ok to be false."))
+	assert.T(t, len(status) == 1, fmt.Sprintf("expected 1 status for event got %s.", len(status)))
+	assert.T(t, status[0].Id == "1", fmt.Sprintf("expected status for event %s, got %s.", "1", status[0].Id))
+	assert.T(t, !status[0].Ok, fmt.Sprintf("expected status.Ok to be false."))
 }
 
 func TestResponseChannelOkAndFailed(t *testing.T) {
-	writeStatus = make(chan *BulkSaveStatus, 1)
+	writeStatus = make(chan []*BulkSaveStatus, 1)
 
 	esResponse := []byte(`{
     "took": 1,
@@ -213,10 +215,10 @@ func TestResponseChannelOkAndFailed(t *testing.T) {
 	go processEsResponse(esResponse)
 
 	status := <-writeStatus
-	assert.T(t, status.Id == "1", fmt.Sprintf("expected status for event %s, got %s.", "1", status.Id))
-	assert.T(t, !status.Ok, fmt.Sprintf("expected status.Ok to be false."))
+	assert.T(t, len(status) == 2, fmt.Sprintf("expected 2 statuses for event got %s.", len(status)))
+	assert.T(t, status[0].Id == "1", fmt.Sprintf("expected status for event %s, got %s.", "1", status[0].Id))
+	assert.T(t, !status[0].Ok, fmt.Sprintf("expected status.Ok to be false."))
 
-	status = <-writeStatus
-	assert.T(t, status.Id == "2", fmt.Sprintf("expected status for event %s, got %s.", "2", status.Id))
-	assert.T(t, status.Ok, fmt.Sprintf("expected status.Ok to be true."))
+	assert.T(t, status[1].Id == "2", fmt.Sprintf("expected status for event %s, got %s.", "2", status[1].Id))
+	assert.T(t, status[1].Ok, fmt.Sprintf("expected status.Ok to be true."))
 }
