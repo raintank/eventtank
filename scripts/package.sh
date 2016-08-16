@@ -24,7 +24,7 @@ PACKAGE_NAME="${BUILD}/eventtank-${VERSION}_${ARCH}.deb"
 fpm -s dir -t deb \
   -v ${VERSION} -n eventtank -a ${ARCH} --description "Persist raintank Events to Elasticsearch" \
   --config-files /etc/raintank/ \
-  --deb-upstart ${BASE}/etc/upstart/eventtank.conf \
+  --deb-upstart ${BASE}/etc/upstart/eventtank \
   -m "Raintank Inc. <hello@raintank.io>" --vendor "raintank.io" \
   --license "Apache2.0" -C ${BUILD} -p ${PACKAGE_NAME} .
 
