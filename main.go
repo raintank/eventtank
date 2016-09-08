@@ -194,7 +194,7 @@ func (q *InProgressMessageQueue) markOffsets() {
 			continue
 		}
 		for partition := range savedOffests[topic] {
-			if _, ok := unsavedOffest[topic][partition]; ok {
+			if _, ok := unsavedOffest[topic][partition]; !ok {
 				// no unsaved offests for this partition.
 				newestOffset := 0
 				for offset, id := range savedOffests[topic][partition] {
