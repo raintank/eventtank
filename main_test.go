@@ -9,7 +9,6 @@ import (
 	"github.com/bmizerany/assert"
 	"github.com/codeskyblue/go-uuid"
 	"github.com/raintank/eventtank/eventdef"
-	"github.com/raintank/met/helper"
 	"gopkg.in/raintank/schema.v1"
 )
 
@@ -28,8 +27,6 @@ func makeEvent(timestamp time.Time) *schema.ProbeEvent {
 
 func TestAddInProgressMessage(t *testing.T) {
 	e := makeEvent(time.Now())
-	metrics, _ := helper.New(false, "", "standard", "nsq_prove_events_to_elasticsearch", "")
-	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
 	go writeQueue.Loop()
@@ -49,8 +46,6 @@ func TestAddInProgressMessage(t *testing.T) {
 
 func TestAddInProgressMessageThenProcess(t *testing.T) {
 	e := makeEvent(time.Now())
-	metrics, _ := helper.New(false, "", "standard", "nsq_prove_events_to_elasticsearch", "")
-	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
 	go writeQueue.Loop()
@@ -83,8 +78,6 @@ func TestAddInProgressMessageThenProcess(t *testing.T) {
 
 func TestAddInProgressMessageThenProcessFailed(t *testing.T) {
 	e := makeEvent(time.Now())
-	metrics, _ := helper.New(false, "", "standard", "nsq_prove_events_to_elasticsearch", "")
-	initMetrics(metrics)
 
 	writeQueue = NewInProgressMessageQueue()
 	go writeQueue.Loop()
@@ -116,10 +109,6 @@ func TestAddInProgressMessageThenProcessFailed(t *testing.T) {
 }
 
 func TestAddMultipleInProgressMessageThenProcess(t *testing.T) {
-
-	metrics, _ := helper.New(false, "", "standard", "nsq_prove_events_to_elasticsearch", "")
-	initMetrics(metrics)
-
 	writeQueue = NewInProgressMessageQueue()
 	go writeQueue.Loop()
 
