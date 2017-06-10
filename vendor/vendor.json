@@ -9,6 +9,20 @@
 			"revisionTime": "2015-06-18T03:07:19Z"
 		},
 		{
+			"checksumSHA1": "vPAHn6NQfXwZmzal7YBN93Fnd6I=",
+			"origin": "github.com/raintank/metrictank/vendor/github.com/Dieterbe/artisanalhistogram/hist12h",
+			"path": "github.com/Dieterbe/artisanalhistogram/hist12h",
+			"revision": "32375e1838ecef13b2144a4bcadf914554f260f9",
+			"revisionTime": "2017-06-02T15:27:37Z"
+		},
+		{
+			"checksumSHA1": "1XTRa3K5n8OmWeUBsG8MHyHzDGM=",
+			"origin": "github.com/raintank/metrictank/vendor/github.com/Dieterbe/artisanalhistogram/hist15s",
+			"path": "github.com/Dieterbe/artisanalhistogram/hist15s",
+			"revision": "32375e1838ecef13b2144a4bcadf914554f260f9",
+			"revisionTime": "2017-06-02T15:27:37Z"
+		},
+		{
 			"checksumSHA1": "Eq40BGwy01qYvfjJnZLImoGGJ7k=",
 			"path": "github.com/Shopify/sarama",
 			"revision": "d4ece5d05a86b2b64248f4943f872bea961ec835",
@@ -55,6 +69,13 @@
 			"path": "github.com/davecgh/go-spew/spew",
 			"revision": "5215b55f46b2b919f50a1df0eaa5886afe4e3b3d",
 			"revisionTime": "2015-11-05T21:09:06Z"
+		},
+		{
+			"checksumSHA1": "e4U50WUz2ycziirb3+JAVz3t49w=",
+			"origin": "github.com/raintank/metrictank/vendor/github.com/dgryski/go-linlog",
+			"path": "github.com/dgryski/go-linlog",
+			"revision": "32375e1838ecef13b2144a4bcadf914554f260f9",
+			"revisionTime": "2017-06-02T15:27:37Z"
 		},
 		{
 			"checksumSHA1": "y2Kh4iPlgCPXSGTCcFpzePYdzzg=",
@@ -152,6 +173,12 @@
 			"path": "github.com/raintank/met/statsd",
 			"revision": "daf6d57fc20532f01eb2320040a8054b5618cbf1",
 			"revisionTime": "2016-01-13T08:38:23Z"
+		},
+		{
+			"checksumSHA1": "z8tyaX1kWYzQELcDNg/sPZtMnbs=",
+			"path": "github.com/raintank/metrictank/stats",
+			"revision": "32375e1838ecef13b2144a4bcadf914554f260f9",
+			"revisionTime": "2017-06-02T15:27:37Z"
 		},
 		{
 			"checksumSHA1": "oCMADD0xqElYRIXBgNkBGHXGQyk=",
