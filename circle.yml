@@ -18,7 +18,7 @@ test:
     - scripts/package.sh
 dependencies:
   override:
-    - cd $IMPORTPATH && scripts/depends.sh
+    - scripts/depends.sh
     - cd $IMPORTPATH && scripts/build.sh
     - cd $IMPORTPATH && scripts/build_docker.sh
 general:
