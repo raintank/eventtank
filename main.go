@@ -40,12 +40,13 @@ var (
 	consumerMaxWaitTime       = flag.String("consumer-max-wait-time", "1s", "The maximum amount of time the broker will wait for Consumer.Fetch.Min bytes to become available before it returns fewer than that anyway")
 	consumerMaxProcessingTime = flag.String("consumer-max-processing-time", "1s", "The maximum amount of time the consumer expects a message takes to process")
 
-	esAddr      = flag.String("elastic-addr", "localhost:9200", "elasticsearch address (default: localhost:9200)")
+	esAddr      = flag.String("elastic-url", "http://localhost:9200", "elasticsearch url")
 	esBatchSize = flag.Int("elastic-batch-size", 1000, "maximum number of events in each bulkIndex request")
 
-	statsdAddr = flag.String("statsd-addr", "localhost:8125", "statsd address (default: localhost:8125)")
-	statsdType = flag.String("statsd-type", "standard", "statsd type: standard or datadog (default: standard)")
-	confFile   = flag.String("config", "/etc/raintank/eventtank.ini", "configuration file (default /etc/raintank/eventtank.ini")
+	statsEnabled = flag.Bool("stats-enabled", false, "enable sending graphite messages for instrumentation")
+	statsdAddr   = flag.String("statsd-addr", "localhost:8125", "statsd address (default: localhost:8125)")
+	statsdType   = flag.String("statsd-type", "standard", "statsd type: standard or datadog (default: standard)")
+	confFile     = flag.String("config", "/etc/raintank/eventtank.ini", "configuration file (default /etc/raintank/eventtank.ini")
 
 	logLevel   = flag.Int("log-level", 2, "log level. 0=TRACE|1=DEBUG|2=INFO|3=WARN|4=ERROR|5=CRITICAL|6=FATAL")
 	listenAddr = flag.String("listen", ":6060", "http listener address.")
@@ -278,7 +279,10 @@ func main() {
 
 	// Only try and parse the conf file if it exists
 	if _, err := os.Stat(*confFile); err == nil {
-		conf, err := globalconf.NewWithOptions(&globalconf.Options{Filename: *confFile})
+		conf, err := globalconf.NewWithOptions(&globalconf.Options{
+			Filename:  *confFile,
+			EnvPrefix: "ET_",
+		})
 		if err != nil {
 			log.Fatal(4, err.Error())
 		}
@@ -316,7 +320,7 @@ func main() {
 	if err != nil {
 		log.Fatal(4, err.Error())
 	}
-	metrics, err := helper.New(true, *statsdAddr, *statsdType, "eventtank", strings.Replace(hostname, ".", "_", -1))
+	metrics, err := helper.New(*statsEnabled, *statsdAddr, *statsdType, "eventtank", strings.Replace(hostname, ".", "_", -1))
 	if err != nil {
 		log.Fatal(4, err.Error())
 	}
@@ -330,7 +334,7 @@ func main() {
 	go writeQueue.Loop()
 	go writeQueue.ProcessInProgress()
 
-	err = eventdef.InitElasticsearch(*esAddr, "", "", writeQueue.status, *esBatchSize)
+	err = eventdef.InitElasticsearch(*esAddr, writeQueue.status, *esBatchSize)
 	if err != nil {
 		log.Fatal(4, err.Error())
 	}
