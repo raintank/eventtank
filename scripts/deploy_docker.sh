@@ -7,5 +7,5 @@ cd ${DIR}
 
 VERSION=`git describe --always`
 
-docker push raintank/tsdb-gw:$VERSION
-docker push raintank/tsdb-gw:latest
+docker push raintank/eventtank:$VERSION
+docker push raintank/eventtank:latest
