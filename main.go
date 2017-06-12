@@ -17,8 +17,7 @@ import (
 
 	"github.com/Shopify/sarama"
 	"github.com/bsm/sarama-cluster"
-	"github.com/raintank/met"
-	"github.com/raintank/met/helper"
+	"github.com/raintank/metrictank/stats"
 	"github.com/raintank/worldping-api/pkg/log"
 	"gopkg.in/raintank/schema.v1"
 	"gopkg.in/raintank/schema.v1/msg"
@@ -40,23 +39,27 @@ var (
 	consumerMaxWaitTime       = flag.String("consumer-max-wait-time", "1s", "The maximum amount of time the broker will wait for Consumer.Fetch.Min bytes to become available before it returns fewer than that anyway")
 	consumerMaxProcessingTime = flag.String("consumer-max-processing-time", "1s", "The maximum amount of time the consumer expects a message takes to process")
 
-	esAddr      = flag.String("elastic-addr", "localhost:9200", "elasticsearch address (default: localhost:9200)")
+	esAddr      = flag.String("elastic-url", "http://localhost:9200", "elasticsearch url")
 	esBatchSize = flag.Int("elastic-batch-size", 1000, "maximum number of events in each bulkIndex request")
 
-	statsdAddr = flag.String("statsd-addr", "localhost:8125", "statsd address (default: localhost:8125)")
-	statsdType = flag.String("statsd-type", "standard", "statsd type: standard or datadog (default: standard)")
-	confFile   = flag.String("config", "/etc/raintank/eventtank.ini", "configuration file (default /etc/raintank/eventtank.ini")
+	statsEnabled    = flag.Bool("stats-enabled", false, "enable sending graphite messages for instrumentation")
+	statsPrefix     = flag.String("stats-prefix", "worldping.eventtank.stats.default.$hostname", "stats prefix (will add trailing dot automatically if needed)")
+	statsAddr       = flag.String("stats-addr", "localhost:2003", "graphite address")
+	statsInterval   = flag.Int("stats-interval", 10, "interval in seconds to send statistics")
+	statsBufferSize = flag.Int("stats-buffer-size", 2000, "how many messages (holding all measurements from one interval) to buffer up in case graphite endpoint is unavailable.")
+
+	confFile = flag.String("config", "/etc/raintank/eventtank.ini", "configuration file (default /etc/raintank/eventtank.ini")
 
 	logLevel   = flag.Int("log-level", 2, "log level. 0=TRACE|1=DEBUG|2=INFO|3=WARN|4=ERROR|5=CRITICAL|6=FATAL")
 	listenAddr = flag.String("listen", ":6060", "http listener address.")
 
-	eventsToEsOK   met.Count
-	eventsToEsFail met.Count
-	esPutDuration  met.Timer
-	messagesSize   met.Meter
-	msgsAge        met.Meter // in ms
-	msgsHandleOK   met.Count
-	msgsHandleFail met.Count
+	messagesSize   = stats.NewMeter32("message_size", false)
+	msgsAge        = stats.NewLatencyHistogram15s32("message_age")
+	eventsToEsOK   = stats.NewCounter32("events_to_es.ok")
+	eventsToEsFail = stats.NewCounter32("events_to_es.fail")
+	esPutDuration  = stats.NewLatencyHistogram15s32("es_put_duration")
+	msgsHandleOK   = stats.NewCounter32("handle.ok")
+	msgsHandleFail = stats.NewCounter32("handle.fail")
 
 	writeQueue *InProgressMessageQueue
 	GitHash    = "(none)"
@@ -74,8 +77,8 @@ func Consume(done chan struct{}) {
 			log.Error(3, "skipping message. %s", err)
 			continue
 		}
-		messagesSize.Value(int64(len(m.Value)))
-		msgsAge.Value(time.Now().Sub(ms.Produced).Nanoseconds() / 1000)
+		messagesSize.Value(len(m.Value))
+		msgsAge.Value(time.Now().Sub(ms.Produced))
 		err = ms.DecodeProbeEvent()
 		if err != nil {
 			log.Error(3, "skipping message. %s", err)
@@ -129,7 +132,7 @@ func (q *InProgressMessageQueue) ProcessInProgress() {
 			if err := eventdef.Save(in.Event); err != nil {
 				log.Error(3, "couldn't process %s: %s", in.Event.Id, err)
 				if failCount == 0 {
-					msgsHandleFail.Inc(1)
+					msgsHandleFail.Inc()
 				}
 				failCount++
 				if failCount > 10 {
@@ -245,12 +248,12 @@ func (q *InProgressMessageQueue) Loop() {
 			if m, ok := q.inProgress[s.Id]; ok {
 				if s.Ok {
 					m.saved = true
-					eventsToEsOK.Inc(1)
-					msgsHandleOK.Inc(1)
+					eventsToEsOK.Inc()
+					msgsHandleOK.Inc()
 					log.Debug("event %s commited to ES", s.Id)
 				} else {
-					eventsToEsFail.Inc(1)
-					msgsHandleFail.Inc(1)
+					eventsToEsFail.Inc()
+					msgsHandleFail.Inc()
 					log.Error(3, "event %s failed to save, requeueing", s.Id)
 					q.ProcessChan <- m
 				}
@@ -278,7 +281,10 @@ func main() {
 
 	// Only try and parse the conf file if it exists
 	if _, err := os.Stat(*confFile); err == nil {
-		conf, err := globalconf.NewWithOptions(&globalconf.Options{Filename: *confFile})
+		conf, err := globalconf.NewWithOptions(&globalconf.Options{
+			Filename:  *confFile,
+			EnvPrefix: "ET_",
+		})
 		if err != nil {
 			log.Fatal(4, err.Error())
 		}
@@ -316,21 +322,23 @@ func main() {
 	if err != nil {
 		log.Fatal(4, err.Error())
 	}
-	metrics, err := helper.New(true, *statsdAddr, *statsdType, "eventtank", strings.Replace(hostname, ".", "_", -1))
-	if err != nil {
-		log.Fatal(4, err.Error())
+	if *statsEnabled {
+		stats.NewMemoryReporter()
+		hostname, _ := os.Hostname()
+		prefix := strings.Replace(*statsPrefix, "$hostname", strings.Replace(hostname, ".", "_", -1), -1)
+		stats.NewGraphite(prefix, *statsAddr, *statsInterval, *statsBufferSize)
+	} else {
+		stats.NewDevnull()
 	}
 
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	initMetrics(metrics)
-
 	writeQueue = NewInProgressMessageQueue()
 	go writeQueue.Loop()
 	go writeQueue.ProcessInProgress()
 
-	err = eventdef.InitElasticsearch(*esAddr, "", "", writeQueue.status, *esBatchSize)
+	err = eventdef.InitElasticsearch(*esAddr, writeQueue.status, *esBatchSize)
 	if err != nil {
 		log.Fatal(4, err.Error())
 	}
@@ -379,16 +387,6 @@ func main() {
 			eventdef.StopBulkIndexer()
 		}
 	}
-}
-
-func initMetrics(metrics met.Backend) {
-	messagesSize = metrics.NewMeter("message_size", 0)
-	msgsAge = metrics.NewMeter("message_age", 0)
-	eventsToEsOK = metrics.NewCount("events_to_es.ok")
-	eventsToEsFail = metrics.NewCount("events_to_es.fail")
-	esPutDuration = metrics.NewTimer("es_put_duration", 0)
-	msgsHandleOK = metrics.NewCount("handle.ok")
-	msgsHandleFail = metrics.NewCount("handle.fail")
 }
 
 func kafkaNotifications() {

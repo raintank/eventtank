@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
+	"net/url"
 	"time"
 
 	elastigo "github.com/mattbaird/elastigo/lib"
@@ -43,18 +43,21 @@ type BulkSaveStatus struct {
 	Ok bool
 }
 
-func InitElasticsearch(addr, user, pass string, w chan []*BulkSaveStatus, bulkMaxDocs int) error {
+func InitElasticsearch(addr string, w chan []*BulkSaveStatus, bulkMaxDocs int) error {
 	writeStatus = w
-	es = elastigo.NewConn()
-	host, port, err := net.SplitHostPort(addr)
+	esAddr, err := url.Parse(addr)
 	if err != nil {
 		return err
 	}
-	es.Domain = host
-	es.Port = port
-	if user != "" && pass != "" {
-		es.Username = user
-		es.Password = pass
+	es = elastigo.NewConn()
+	es.Protocol = esAddr.Scheme
+	es.Domain = esAddr.Hostname()
+	es.Port = esAddr.Port()
+	if esAddr.User != nil {
+		es.Username = esAddr.User.Username()
+		if pass, ok := esAddr.User.Password(); ok {
+			es.Password = pass
+		}
 	}
 
 	// ensure that our index templates exist
