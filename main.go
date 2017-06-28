@@ -121,11 +121,34 @@ type InProgressMessageQueue struct {
 	inProgress  map[string]*inProgressMessage
 	status      chan []*eventdef.BulkSaveStatus
 	ProcessChan chan *inProgressMessage
+	retryChan   chan *inProgressMessage
 }
 
 func (q *InProgressMessageQueue) ProcessInProgress() {
 	for in := range q.ProcessChan {
-		writeQueue.EnQueue(in)
+		q.EnQueue(in)
+		saved := false
+		failCount := 0
+		for !saved {
+			if err := eventdef.Save(in.Event); err != nil {
+				log.Error(3, "couldn't process %s: %s", in.Event.Id, err)
+				if failCount == 0 {
+					msgsHandleFail.Inc()
+				}
+				failCount++
+				if failCount > 10 {
+					log.Fatal(4, "Unable to add events to the bulkindexer for 10seconds.  Terminating process.")
+				}
+				time.Sleep(time.Second)
+			} else {
+				saved = true
+			}
+		}
+	}
+}
+func (q *InProgressMessageQueue) ProcessRetries() {
+	for in := range q.retryChan {
+		q.EnQueue(in)
 		saved := false
 		failCount := 0
 		for !saved {
@@ -255,7 +278,7 @@ func (q *InProgressMessageQueue) Loop() {
 					eventsToEsFail.Inc()
 					msgsHandleFail.Inc()
 					log.Error(3, "event %s failed to save, requeueing", s.Id)
-					q.ProcessChan <- m
+					q.retryChan <- m
 				}
 				esPutDuration.Value(time.Now().Sub(m.Timestamp))
 			} else {
@@ -270,8 +293,9 @@ func (q *InProgressMessageQueue) Loop() {
 func NewInProgressMessageQueue() *InProgressMessageQueue {
 	q := &InProgressMessageQueue{
 		inProgress:  make(map[string]*inProgressMessage),
-		status:      make(chan []*eventdef.BulkSaveStatus),
+		status:      make(chan []*eventdef.BulkSaveStatus, 100000),
 		ProcessChan: make(chan *inProgressMessage, 1000),
+		retryChan:   make(chan *inProgressMessage, 10000),
 	}
 	return q
 }
@@ -337,6 +361,7 @@ func main() {
 	writeQueue = NewInProgressMessageQueue()
 	go writeQueue.Loop()
 	go writeQueue.ProcessInProgress()
+	go writeQueue.ProcessRetries()
 
 	err = eventdef.InitElasticsearch(*esAddr, writeQueue.status, *esBatchSize)
 	if err != nil {
