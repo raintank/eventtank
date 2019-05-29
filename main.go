@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -16,7 +17,6 @@ import (
 	"time"
 
 	"github.com/Shopify/sarama"
-	"github.com/bsm/sarama-cluster"
 	"github.com/raintank/metrictank/stats"
 	"github.com/raintank/worldping-api/pkg/log"
 	"gopkg.in/raintank/schema.v1"
@@ -61,14 +61,63 @@ var (
 	msgsHandleOK   = stats.NewCounter32("handle.ok")
 	msgsHandleFail = stats.NewCounter32("handle.fail")
 
-	writeQueue *InProgressMessageQueue
-	GitHash    = "(none)"
+	GitHash = "(none)"
 
-	consumer *cluster.Consumer
+	consumer sarama.ConsumerGroup
 )
 
-func Consume(done chan struct{}) {
-	for m := range consumer.Messages() {
+type inProgressMessage struct {
+	Timestamp time.Time
+	Message   *sarama.ConsumerMessage
+	Event     *schema.ProbeEvent
+	saved     bool
+}
+
+type InProgressMessageQueue struct {
+	sync.RWMutex
+	inProgress  map[string]*inProgressMessage
+	status      chan []*eventdef.BulkSaveStatus
+	ProcessChan chan *inProgressMessage
+	retryChan   chan *inProgressMessage
+	sess        sarama.ConsumerGroupSession
+}
+
+func (q *InProgressMessageQueue) Setup(sess sarama.ConsumerGroupSession) error {
+	q.Lock()
+	q.sess = sess
+	q.Unlock()
+	return nil
+}
+func (q *InProgressMessageQueue) Cleanup(sess sarama.ConsumerGroupSession) error {
+	start := time.Now()
+	q.Lock()
+	inProgress := len(q.inProgress)
+	q.Unlock()
+
+	for inProgress > 0 && time.Since(start) < time.Second*30 {
+		time.Sleep(time.Second)
+		q.Lock()
+		inProgress = len(q.inProgress)
+		q.Unlock()
+	}
+	// waited too long. going to discard inflight events
+	if inProgress > 0 {
+		q.Lock()
+		q.inProgress = make(map[string]*inProgressMessage)
+		q.Unlock()
+	}
+
+	return nil
+}
+
+func (q *InProgressMessageQueue) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
+	topic := claim.Topic()
+	partition := claim.Partition()
+	log.Info("consumerClaim acquired for %d on topic %s", partition, topic)
+	defer func() {
+		log.Info("consumerClaim released partition %d on topic %s", partition, topic)
+	}()
+	for m := range claim.Messages() {
 		if *logLevel < 2 {
 			log.Debug("received message: Topic %s, Partition: %d, Offset: %d, Key: %x", m.Topic, m.Partition, m.Offset, m.Key)
 		}
@@ -104,24 +153,9 @@ func Consume(done chan struct{}) {
 			Message:   m,
 			Event:     ms.Event,
 		}
-		writeQueue.ProcessChan <- inProgress
+		q.ProcessChan <- inProgress
 	}
-	close(done)
-}
-
-type inProgressMessage struct {
-	Timestamp time.Time
-	Message   *sarama.ConsumerMessage
-	Event     *schema.ProbeEvent
-	saved     bool
-}
-
-type InProgressMessageQueue struct {
-	sync.RWMutex
-	inProgress  map[string]*inProgressMessage
-	status      chan []*eventdef.BulkSaveStatus
-	ProcessChan chan *inProgressMessage
-	retryChan   chan *inProgressMessage
+	return nil
 }
 
 func (q *InProgressMessageQueue) ProcessInProgress() {
@@ -214,7 +248,7 @@ func (q *InProgressMessageQueue) markOffsets() {
 					delete(q.inProgress, id)
 				}
 				if consumer != nil {
-					consumer.MarkPartitionOffset(topic, partition, int64(newestOffset), "")
+					q.sess.MarkOffset(topic, partition, int64(newestOffset), "")
 				}
 			}
 			continue
@@ -230,7 +264,7 @@ func (q *InProgressMessageQueue) markOffsets() {
 					delete(q.inProgress, id)
 				}
 				if consumer != nil {
-					consumer.MarkPartitionOffset(topic, partition, int64(newestOffset), "")
+					q.sess.MarkOffset(topic, partition, int64(newestOffset), "")
 				}
 				continue
 			}
@@ -254,7 +288,7 @@ func (q *InProgressMessageQueue) markOffsets() {
 				}
 				if offsets[i] < oldestUnsaved {
 					if consumer != nil {
-						consumer.MarkPartitionOffset(topic, partition, int64(offsets[i]), "")
+						q.sess.MarkOffset(topic, partition, int64(offsets[i]), "")
 					}
 					found = true
 					delete(q.inProgress, savedOffests[topic][partition][offsets[i]])
@@ -273,7 +307,7 @@ func (q *InProgressMessageQueue) Loop() {
 					m.saved = true
 					eventsToEsOK.Inc()
 					msgsHandleOK.Inc()
-					log.Debug("event %s commited to ES", s.Id)
+					log.Debug("event %s committed to ES", s.Id)
 				} else {
 					eventsToEsFail.Inc()
 					msgsHandleFail.Inc()
@@ -358,7 +392,7 @@ func main() {
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-	writeQueue = NewInProgressMessageQueue()
+	writeQueue := NewInProgressMessageQueue()
 	go writeQueue.Loop()
 	go writeQueue.ProcessInProgress()
 	go writeQueue.ProcessRetries()
@@ -371,30 +405,41 @@ func main() {
 	brokers := strings.Split(*brokerStr, ",")
 	topics := strings.Split(*topicStr, ",")
 
-	config := cluster.NewConfig()
+	config := sarama.NewConfig()
 	// see https://github.com/raintank/metrictank/issues/236
-	config.Consumer.Offsets.Initial = sarama.OffsetNewest
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
 	config.ClientID = strings.Replace(hostname, ".", "_", -1) + "-eventtank"
-	config.Group.Return.Notifications = true
 	config.ChannelBufferSize = *channelBufferSize
 	config.Consumer.Fetch.Min = int32(*consumerFetchMin)
 	config.Consumer.Fetch.Default = int32(*consumerFetchDefault)
 	config.Consumer.MaxWaitTime = waitTime
 	config.Consumer.MaxProcessingTime = processingTime
-	config.Config.Version = sarama.V0_10_0_0
+	config.Version = sarama.V2_0_0_0
 	err = config.Validate()
 	if err != nil {
 		log.Fatal(4, "invalid kafka config: %s", err)
 	}
-	consumer, err = cluster.NewConsumer(brokers, *group, topics, config)
+	consumer, err = sarama.NewConsumerGroup(brokers, *group, config)
 	if err != nil {
 		log.Fatal(4, "failed to start kafka consumer: %s", err)
 	}
-
-	go kafkaNotifications()
-	doneChan := make(chan struct{})
-	go Consume(doneChan)
-
+	shutdown := make(chan struct{})
+	consumer.Consume(context.Background(), topics, writeQueue)
+	go func() {
+		log.Info("consuming from consumerGroup")
+		for {
+			select {
+			case <-shutdown:
+				log.Info("consumer is done")
+				return
+			default:
+				err := consumer.Consume(context.Background(), topics, writeQueue)
+				if err != nil {
+					log.Fatal(2, "comsumerGroup error: %v", err)
+				}
+			}
+		}
+	}()
 	go func() {
 		log.Info("INFO starting listener for http/debug on %s", *listenAddr)
 		httperr := http.ListenAndServe(*listenAddr, nil)
@@ -405,36 +450,10 @@ func main() {
 
 	for {
 		select {
-		case <-doneChan:
-			return
 		case <-sigChan:
+			close(shutdown)
 			consumer.Close()
 			eventdef.StopBulkIndexer()
 		}
 	}
-}
-
-func kafkaNotifications() {
-	for msg := range consumer.Notifications() {
-		if len(msg.Claimed) > 0 {
-			for topic, partitions := range msg.Claimed {
-				log.Info("kafka consumer claimed %d partitions on topic: %s", len(partitions), topic)
-			}
-		}
-		if len(msg.Released) > 0 {
-			for topic, partitions := range msg.Released {
-				log.Info("kafka consumer released %d partitions on topic: %s", len(partitions), topic)
-			}
-		}
-
-		if len(msg.Current) == 0 {
-			log.Info("kafka consumer is no longer consuming from any partitions.")
-		} else {
-			log.Info("kafka Current partitions:")
-			for topic, partitions := range msg.Current {
-				log.Info("kafka Current partitions: %s: %v", topic, partitions)
-			}
-		}
-	}
-	log.Info("kafka notification processing stopped")
 }

@@ -28,7 +28,7 @@ func makeEvent(timestamp time.Time) *schema.ProbeEvent {
 func TestAddInProgressMessage(t *testing.T) {
 	e := makeEvent(time.Now())
 
-	writeQueue = NewInProgressMessageQueue()
+	writeQueue := NewInProgressMessageQueue()
 	go writeQueue.Loop()
 
 	writeQueue.EnQueue(&inProgressMessage{
@@ -47,7 +47,7 @@ func TestAddInProgressMessage(t *testing.T) {
 func TestAddInProgressMessageThenProcess(t *testing.T) {
 	e := makeEvent(time.Now())
 
-	writeQueue = NewInProgressMessageQueue()
+	writeQueue := NewInProgressMessageQueue()
 	go writeQueue.Loop()
 
 	writeQueue.EnQueue(&inProgressMessage{
@@ -79,7 +79,7 @@ func TestAddInProgressMessageThenProcess(t *testing.T) {
 func TestAddInProgressMessageThenProcessFailed(t *testing.T) {
 	e := makeEvent(time.Now())
 
-	writeQueue = NewInProgressMessageQueue()
+	writeQueue := NewInProgressMessageQueue()
 	go writeQueue.Loop()
 
 	writeQueue.EnQueue(&inProgressMessage{
@@ -109,7 +109,7 @@ func TestAddInProgressMessageThenProcessFailed(t *testing.T) {
 }
 
 func TestAddMultipleInProgressMessageThenProcess(t *testing.T) {
-	writeQueue = NewInProgressMessageQueue()
+	writeQueue := NewInProgressMessageQueue()
 	go writeQueue.Loop()
 
 	events := make([]*schema.ProbeEvent, 100)
